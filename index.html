@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PSP 三国志7 头像替换工具</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 12px; background: #161616; color: #d4d4d4; user-select: none; }
+  
+  .container { display: flex; gap: 12px; width: 100%; height: calc(100vh - 24px); min-height: 560px; }
+  .panel { background: #202020; padding: 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); overflow: hidden; position: relative; border: 1px solid #2d2d2d; display: flex; flex-direction: column; }
+  
+  .left-col { width: 240px; flex-shrink: 0; gap: 8px; }
+  .mid-col { width: 290px; flex-shrink: 0; gap: 8px; }
+  .right-col { flex: 1; min-width: 230px; align-items: center; justify-content: flex-start; }
+  
+  .section-title { font-size: 12px; font-weight: bold; color: #4fc1ff; margin-bottom: 4px; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 4px; width: 100%; text-align: left; flex-shrink: 0; }
+  .control-group { margin-bottom: 6px; flex-shrink: 0; }
+  label { display: block; font-size: 11px; margin-bottom: 3px; color: #bbb; font-weight: 500; }
+  input[type="number"] { width: 100%; padding: 5px 8px; background: #2b2b2b; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; }
+  input[type="file"] { width: 100%; color: #aaa; font-size: 11px; }
+  
+  .slider-box { display: flex; align-items: center; gap: 6px; }
+  .slider-box input[type="range"] { flex-grow: 1; accent-color: #0e639c; }
+  .slider-box span { width: 36px; text-align: right; font-family: monospace; font-size: 11px; color: #ddd; }
+  
+  .crop-container { width: 100%; height: 210px; background: #111; border: 1px solid #444; position: relative; overflow: hidden; cursor: grab; border-radius: 4px; flex-shrink: 0; }
+  .crop-container:active { cursor: grabbing; }
+  #cropCanvas { position: absolute; left: 0; top: 0; display: block; }
+  .crop-mask { position: absolute; width: 160px; height: 200px; pointer-events: none; border: 2px solid #00ffff; box-shadow: 0 0 0 9999px rgba(0,0,0,0.65); }
+  
+  .preview-column { display: flex; flex-direction: column; gap: 12px; width: 100%; align-items: center; margin-top: 6px; overflow-y: auto; }
+  .canvas-box { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+  .canvas-title { font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #9cdcfe; white-space: nowrap; }
+  canvas.pixelated { width: 192px; height: 240px; border: 2px solid #444; background: #000; image-rendering: pixelated; border-radius: 2px; }
+  
+  .info-box { background: #181818; padding: 8px 10px; border-radius: 4px; font-family: monospace; font-size: 11px; white-space: pre-wrap; border-left: 3px solid #0e639c; line-height: 1.4; color: #aaa; min-height: 44px; word-break: break-all; flex-shrink: 0; }
+  button { padding: 6px 10px; background: #0e639c; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 11px; font-weight: bold; flex-shrink: 0; }
+  button:hover { background: #1177bb; }
+  button.action-btn { background: #2e7d32; font-size: 13px; padding: 9px; }
+  button.action-btn:hover { background: #388e3c; }
+  .checkbox-box { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #ccc; cursor: pointer; flex-shrink: 0; }
+  .checkbox-box input { accent-color: #0e639c; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="left-col panel">
+    <div class="section-title">1. 镜像载入与槽位</div>
+    <div class="control-group">
+      <label style="color:#4fc1ff;">载入 PSP ISO 镜像：</label>
+      <input type="file" id="fileInput" accept=".iso">
+    </div>
+    
+    <div class="control-group">
+      <label>目标武将编号 (0 - 667)：</label>
+      <div style="display: flex; gap: 4px;">
+        <button id="btnPrev" style="width: 38px;">&lt;</button>
+        <input type="number" id="charIndex" min="0" max="667" value="0">
+        <button id="btnNext" style="width: 38px;">&gt;</button>
+      </div>
+      <div style="font-size: 10px; color:#777; margin-top: 4px;">男自创: #538~#607 | 女自创: #608~#637</div>
+    </div>
+
+    <div class="section-title" style="margin-top: 10px;">3. 注入导出</div>
+    <button id="btnSaveIso" class="action-btn">一键注入并另存 ISO</button>
+    <div class="info-box" id="infoBox">等待载入游戏 ISO 镜像...</div>
+
+    <div style="margin-top: auto; text-align: center; font-size: 11px; color: #555; letter-spacing: 0.5px; flex-shrink: 0;">
+      San7 Portrait Tool · Designed by <span style="color: #4fc1ff;">儚</span>
+    </div>
+  </div>
+
+  <div class="mid-col panel">
+    <div class="section-title">2. 图像增强与裁切</div>
+    <div class="control-group">
+      <label>导入图片：</label>
+      <input type="file" id="imageInput" accept=".png,.jpg,.jpeg,.bmp">
+    </div>
+
+    <div class="crop-container" id="cropBox">
+      <canvas id="cropCanvas"></canvas>
+      <div class="crop-mask" id="cropMask"></div>
+    </div>
+    <div style="font-size: 10px; color:#777; margin-top: 2px; flex-shrink: 0;">拖拽平移 | 滚轮或滑块调整缩放</div>
+
+    <div class="control-group" style="margin-top: 4px;">
+      <label>特写放大：</label>
+      <div class="slider-box">
+        <input type="range" id="faceScale" min="0.1" max="3" step="0.02" value="0.56">
+        <span id="scaleVal">0.56x</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label>对比度 (推荐 100~115%)：</label>
+      <div class="slider-box">
+        <input type="range" id="filterContrast" min="80" max="150" step="5" value="110">
+        <span id="contrastVal">110%</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label>亮度调节：</label>
+      <div class="slider-box">
+        <input type="range" id="filterBrightness" min="80" max="150" step="2" value="100">
+        <span id="brightnessVal">100%</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label>保真锐化 (推荐 10~20%)：</label>
+      <div class="slider-box">
+        <input type="range" id="filterSharpen" min="0" max="60" step="5" value="15">
+        <span id="sharpenVal">15%</span>
+      </div>
+    </div>
+
+    <label class="checkbox-box" style="margin-top: 2px;">
+      <input type="checkbox" id="chkBorder" checked>
+      合成原版微光衰浮雕边框
+    </label>
+  </div>
+
+  <div class="right-col panel">
+    <div class="section-title">实机渲染对比</div>
+    <div class="preview-column">
+      <div class="canvas-box">
+        <div class="canvas-title" id="origTitle">原版头像：#0</div>
+        <canvas id="origCanvas" class="pixelated" width="48" height="60"></canvas>
+      </div>
+      <div class="canvas-box">
+        <div class="canvas-title" style="color: #69f0ae;">实机母盘映射 (最终效果)</div>
+        <canvas id="prevHardwareCanvas" class="pixelated" width="48" height="60"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<canvas id="offscreenCanvas" width="48" height="60" style="display: none;"></canvas>
+
+<script>
+const WIDTH = 48;
+const HEIGHT = 60;
+const STRIDE = 4096;
+const HEADER_SIZE = 16;
+const PALETTE_SIZE = 512;
+const META_SKIP = 16;
+const MASK_W = 160;
+const MASK_H = 200;
+
+let fullIsoBuffer = null;
+let kaoOffsetInIso = 0;
+let rawKaoBuffer = null;
+let originalFileName = "SAN7_PERFECT.iso";
+
+let FACTORY_PALETTE_BYTES = null;
+let FACTORY_BASE_COLORS = null;
+let stagedRemappedIndices = null;
+
+let sourceImage = null;
+let imgPosX = 0;
+let imgPosY = 0;
+let isDragging = false;
+let startDragX = 0;
+let startDragY = 0;
+let maskLeft = 0;
+let maskTop = 0;
+
+const fileInput = document.getElementById('fileInput');
+const imageInput = document.getElementById('imageInput');
+const charIndex = document.getElementById('charIndex');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+const infoBox = document.getElementById('infoBox');
+const origTitle = document.getElementById('origTitle');
+const btnSaveIso = document.getElementById('btnSaveIso');
+
+const cropBox = document.getElementById('cropBox');
+const cropCanvas = document.getElementById('cropCanvas');
+const cropCtx = cropCanvas.getContext('2d');
+const cropMask = document.getElementById('cropMask');
+
+const faceScale = document.getElementById('faceScale');
+const scaleVal = document.getElementById('scaleVal');
+const filterContrast = document.getElementById('filterContrast');
+const contrastVal = document.getElementById('contrastVal');
+const filterBrightness = document.getElementById('filterBrightness');
+const brightnessVal = document.getElementById('brightnessVal');
+const filterSharpen = document.getElementById('filterSharpen');
+const sharpenVal = document.getElementById('sharpenVal');
+const chkBorder = document.getElementById('chkBorder');
+
+const origCanvas = document.getElementById('origCanvas');
+const origCtx = origCanvas.getContext('2d');
+const prevCanvas = document.getElementById('prevHardwareCanvas');
+const prevCtx = prevCanvas.getContext('2d');
+
+const offscreenCanvas = document.getElementById('offscreenCanvas');
+const offscreenCtx = offscreenCanvas.getContext('2d');
+
+function updateStatus(msg, isError = false) {
+  infoBox.textContent = msg;
+  infoBox.style.borderLeftColor = isError ? '#e53935' : '#0e639c';
+  infoBox.style.color = isError ? '#ff8a80' : '#aaa';
+}
+
+function initCropArea() {
+  const boxW = cropBox.clientWidth;
+  const boxH = cropBox.clientHeight;
+  if (boxW === 0 || boxH === 0) return;
+
+  const oldLeft = maskLeft;
+  const oldTop = maskTop;
+
+  cropCanvas.width = boxW;
+  cropCanvas.height = boxH;
+  maskLeft = Math.floor((boxW - MASK_W) / 2);
+  maskTop = Math.floor((boxH - MASK_H) / 2);
+
+  cropMask.style.left = maskLeft + 'px';
+  cropMask.style.top = maskTop + 'px';
+
+  if (sourceImage) {
+    if (oldLeft !== 0 || oldTop !== 0) {
+      imgPosX += (maskLeft - oldLeft);
+      imgPosY += (maskTop - oldTop);
+    }
+    drawCropCanvas();
+  }
+}
+window.addEventListener('resize', initCropArea);
+
+function findKaoInIso(u8) {
+  const magic = [0x00, 0x01, 0x01, 0x00, 0x00, 0x80, 0x42, 0x08];
+  for (let sector = 0; sector < u8.length / 2048; sector++) {
+    const base = sector * 2048;
+    if (base + 24 < u8.length) {
+      let match = true;
+      for (let i = 0; i < magic.length; i++) {
+        if (u8[base + 16 + i] !== magic[i]) { match = false; break; }
+      }
+      if (match) return base;
+    }
+  }
+  return -1;
+}
+
+function decodeRgba5551(val) {
+  const r = (val & 0x001F) * 255 / 31;
+  const g = ((val >> 5) & 0x001F) * 255 / 31;
+  const b = ((val >> 10) & 0x001F) * 255 / 31;
+  const a = (val & 0x8000) ? 255 : (val === 0 ? 0 : 255);
+  return [r, g, b, a];
+}
+
+function getOffsets(idx) {
+  const base = HEADER_SIZE + idx * STRIDE;
+  return { base, palStart: base, pixelStart: base + PALETTE_SIZE + META_SKIP };
+}
+
+function extractMasterPaletteByVoting(buffer, baseOffset) {
+  const candidates = {};
+  for (let id = 608; id <= 637; id++) {
+    const { base } = getOffsets(id);
+    const start = baseOffset + base + 4;
+    let sum = 0;
+    for (let i = 0; i < 512; i++) sum = (sum + buffer[start + i]) & 0xFFFFFF;
+    const hex = "0x" + sum.toString(16).toUpperCase();
+    if (!candidates[hex]) candidates[hex] = { count: 0, sampleOffset: start };
+    candidates[hex].count++;
+  }
+
+  let best = null;
+  for (let k in candidates) {
+    if (!best || candidates[k].count > best.count) best = candidates[k];
+  }
+
+  const cleanBytes = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) cleanBytes[i] = buffer[best.sampleOffset + i];
+
+  const view = new DataView(cleanBytes.buffer);
+  const colors = [];
+  for (let i = 0; i < 256; i++) {
+    const val = view.getUint16(i * 2, true);
+    colors.push({
+      r: ((val >> 0) & 0x1F) * 255 / 31,
+      g: ((val >> 5) & 0x1F) * 255 / 31,
+      b: ((val >> 10) & 0x1F) * 255 / 31
+    });
+  }
+  return { bytes: cleanBytes, colors };
+}
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  originalFileName = file.name;
+  
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const buffer = new Uint8Array(evt.target.result);
+    const offset = findKaoInIso(buffer);
+    if (offset === -1) {
+      updateStatus("错误: 未能在该 ISO 中定位头像数据区，请核实镜像版本！", true);
+      return;
+    }
+    fullIsoBuffer = buffer;
+    kaoOffsetInIso = offset;
+    rawKaoBuffer = fullIsoBuffer.subarray(kaoOffsetInIso, kaoOffsetInIso + 2736128);
+
+    const voting = extractMasterPaletteByVoting(buffer, offset);
+    FACTORY_PALETTE_BYTES = voting.bytes;
+    FACTORY_BASE_COLORS = voting.colors;
+
+    updateStatus(`ISO 镜像就绪: ${originalFileName}`);
+    refreshAllPreviews();
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function renderOriginal() {
+  if (!rawKaoBuffer) return;
+  const idx = parseInt(charIndex.value);
+  const { base, pixelStart } = getOffsets(idx);
+  origTitle.textContent = `原版头像：#${idx}`;
+
+  const view = new DataView(rawKaoBuffer.buffer, rawKaoBuffer.byteOffset, rawKaoBuffer.byteLength);
+  const origPal = [];
+  for (let i = 0; i < 256; i++) {
+    const pAddr = base + 4 + i * 2;
+    origPal.push(pAddr + 1 < rawKaoBuffer.length ? decodeRgba5551(view.getUint16(pAddr, true)) : [0,0,0,255]);
+  }
+
+  const imgData = origCtx.createImageData(WIDTH, HEIGHT);
+  const px = imgData.data;
+  for (let y = 0; y < HEIGHT; y++) {
+    for (let x = 0; x < WIDTH; x++) {
+      const colorIdx = rawKaoBuffer[pixelStart + (y * WIDTH + x)];
+      const col = origPal[colorIdx] || [0,0,0,255];
+      const t = (y * WIDTH + x) * 4;
+      px[t] = col[0]; px[t+1] = col[1]; px[t+2] = col[2]; px[t+3] = 255;
+    }
+  }
+  origCtx.putImageData(imgData, 0, 0);
+}
+
+imageInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const img = new Image();
+    img.onload = function() {
+      sourceImage = img;
+      
+      const minScale = Math.max(MASK_W / img.width, MASK_H / img.height);
+      faceScale.min = minScale.toFixed(3);
+      
+      const defaultScale = Math.max(minScale, 0.56);
+      faceScale.value = defaultScale.toFixed(2);
+      scaleVal.textContent = faceScale.value + 'x';
+
+      imgPosX = maskLeft + (MASK_W - img.width * parseFloat(faceScale.value)) / 2;
+      imgPosY = maskTop + (MASK_H - img.height * parseFloat(faceScale.value)) / 2;
+      
+      drawCropCanvas();
+      processAndQuantize();
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+cropBox.addEventListener('mousedown', (e) => {
+  if (!sourceImage) return;
+  isDragging = true;
+  startDragX = e.clientX - imgPosX;
+  startDragY = e.clientY - imgPosY;
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging || !sourceImage) return;
+  imgPosX = e.clientX - startDragX;
+  imgPosY = e.clientY - startDragY;
+  drawCropCanvas();
+});
+window.addEventListener('mouseup', () => {
+  if (isDragging) { isDragging = false; processAndQuantize(); }
+});
+cropBox.addEventListener('wheel', (e) => {
+  if (!sourceImage) return;
+  e.preventDefault();
+  let sc = parseFloat(faceScale.value) - e.deltaY * 0.001;
+  sc = Math.min(3, Math.max(parseFloat(faceScale.min), sc));
+  faceScale.value = sc.toFixed(2);
+  scaleVal.textContent = sc.toFixed(2) + 'x';
+  drawCropCanvas();
+  processAndQuantize();
+}, { passive: false });
+
+faceScale.addEventListener('input', (e) => {
+  scaleVal.textContent = e.target.value + 'x';
+  drawCropCanvas();
+  processAndQuantize();
+});
+
+function drawCropCanvas() {
+  if (!sourceImage) return;
+  cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+  const sc = parseFloat(faceScale.value);
+  cropCtx.drawImage(sourceImage, imgPosX, imgPosY, sourceImage.width * sc, sourceImage.height * sc);
+}
+
+function applySharpen(imgData, w, h, strength) {
+  if (strength <= 0) return imgData;
+  const src = imgData.data;
+  const out = new Uint8ClampedArray(src);
+  const factor = strength / 100;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      for (let c = 0; c < 3; c++) {
+        const idx = (y * w + x) * 4 + c;
+        const edge = 4 * src[idx] - src[((y - 1) * w + x) * 4 + c] - src[((y + 1) * w + x) * 4 + c] - src[(y * w + (x - 1)) * 4 + c] - src[(y * w + (x + 1)) * 4 + c];
+        out[idx] = Math.min(255, Math.max(0, src[idx] + edge * factor));
+      }
+    }
+  }
+  return new ImageData(out, w, h);
+}
+
+function applyAdaptiveBorder(px) {
+  function setPx(x, y, r, g, b) {
+    const idx = (y * WIDTH + x) * 4;
+    px[idx + 0] = Math.min(255, Math.max(0, Math.round(r)));
+    px[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+    px[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
+    px[idx + 3] = 255;
+  }
+
+  function getPx(x, y) {
+    const idx = (y * WIDTH + x) * 4;
+    return [px[idx], px[idx+1], px[idx+2]];
+  }
+
+  for (let x = 1; x < WIDTH - 1; x++) {
+    const [r, g, b] = getPx(x, 0);
+    const falloff = 1.0 - (x / (WIDTH - 1)) * 0.22; 
+    setPx(x, 0, Math.max(r * 0.25 + 242 * 0.75 * falloff, 185 * falloff),
+                 Math.max(g * 0.25 + 235 * 0.75 * falloff, 178 * falloff),
+                 Math.max(b * 0.25 + 220 * 0.75 * falloff, 162 * falloff));
+  }
+
+  for (let y = 1; y < HEIGHT - 1; y++) {
+    const [r, g, b] = getPx(0, y);
+    const falloff = 1.0 - (y / (HEIGHT - 1)) * 0.22;
+    setPx(0, y, Math.max(r * 0.25 + 242 * 0.75 * falloff, 185 * falloff),
+                 Math.max(g * 0.25 + 235 * 0.75 * falloff, 178 * falloff),
+                 Math.max(b * 0.25 + 220 * 0.75 * falloff, 162 * falloff));
+  }
+
+  for (let x = 1; x < WIDTH - 1; x++) {
+    const [r, g, b] = getPx(x, HEIGHT - 1);
+    const deepen = 0.85 + (x / (WIDTH - 1)) * 0.15;
+    setPx(x, HEIGHT - 1, Math.min(r * 0.2 + 56 * 0.8, 62) * deepen,
+                         Math.min(g * 0.2 + 50 * 0.8, 56) * deepen,
+                         Math.min(b * 0.2 + 45 * 0.8, 50) * deepen);
+  }
+
+  for (let y = 1; y < HEIGHT - 1; y++) {
+    const [r, g, b] = getPx(WIDTH - 1, y);
+    const deepen = 0.85 + (y / (HEIGHT - 1)) * 0.15;
+    setPx(WIDTH - 1, y, Math.min(r * 0.2 + 56 * 0.8, 62) * deepen,
+                         Math.min(g * 0.2 + 50 * 0.8, 56) * deepen,
+                         Math.min(b * 0.2 + 45 * 0.8, 50) * deepen);
+  }
+
+  setPx(0, 0, 245, 238, 225);
+  setPx(WIDTH - 1, HEIGHT - 1, 50, 44, 40);
+
+  const topEnd = getPx(WIDTH - 2, 0);
+  const rightStart = getPx(WIDTH - 1, 1);
+  setPx(WIDTH - 1, 0, (topEnd[0] + rightStart[0]) * 0.5, (topEnd[1] + rightStart[1]) * 0.5, (topEnd[2] + rightStart[2]) * 0.5);
+
+  const leftEnd = getPx(0, HEIGHT - 2);
+  const bottomStart = getPx(1, HEIGHT - 1);
+  setPx(0, HEIGHT - 1, (leftEnd[0] + bottomStart[0]) * 0.5, (leftEnd[1] + bottomStart[1]) * 0.5, (leftEnd[2] + bottomStart[2]) * 0.5);
+}
+
+function processAndQuantize() {
+  if (!sourceImage || !FACTORY_BASE_COLORS) return;
+  const sc = parseFloat(faceScale.value);
+  const ct = parseInt(filterContrast.value);
+  const br = parseInt(filterBrightness.value);
+  const sh = parseInt(filterSharpen.value);
+  const addBorder = chkBorder.checked;
+
+  const srcCropX = (maskLeft - imgPosX) / sc;
+  const srcCropY = (maskTop - imgPosY) / sc;
+  const srcCropW = MASK_W / sc;
+  const srcCropH = MASK_H / sc;
+
+  offscreenCtx.save();
+  offscreenCtx.filter = `contrast(${ct}%) brightness(${br}%)`;
+  offscreenCtx.drawImage(sourceImage, srcCropX, srcCropY, srcCropW, srcCropH, 0, 0, WIDTH, HEIGHT);
+  offscreenCtx.restore();
+
+  let preData = applySharpen(offscreenCtx.getImageData(0, 0, WIDTH, HEIGHT), WIDTH, HEIGHT, sh);
+  if (addBorder) applyAdaptiveBorder(preData.data);
+
+  const rawPx = preData.data;
+  stagedRemappedIndices = new Uint8Array(WIDTH * HEIGHT);
+  const outImgData = prevCtx.createImageData(WIDTH, HEIGHT);
+  const outPx = outImgData.data;
+
+  for (let i = 0; i < WIDTH * HEIGHT; i++) {
+    const pr = rawPx[i * 4 + 0];
+    const pg = rawPx[i * 4 + 1];
+    const pb = rawPx[i * 4 + 2];
+
+    let bestDist = Infinity;
+    let bestIdx = 1;
+    for (let c = 1; c < 256; c++) {
+      const pal = FACTORY_BASE_COLORS[c];
+      const dr = pr - pal.r;
+      const dg = pg - pal.g;
+      const db = pb - pal.b;
+      const dist = dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114;
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = c;
+      }
+    }
+
+    stagedRemappedIndices[i] = bestIdx;
+    const finalCol = FACTORY_BASE_COLORS[bestIdx];
+    const t = i * 4;
+    outPx[t] = finalCol.r;
+    outPx[t+1] = finalCol.g;
+    outPx[t+2] = finalCol.b;
+    outPx[t+3] = 255;
+  }
+
+  prevCtx.putImageData(outImgData, 0, 0);
+}
+
+[filterContrast, filterBrightness, filterSharpen].forEach(inp => {
+  inp.addEventListener('input', () => {
+    contrastVal.textContent = filterContrast.value + '%';
+    brightnessVal.textContent = filterBrightness.value + '%';
+    sharpenVal.textContent = filterSharpen.value + '%';
+    processAndQuantize();
+  });
+});
+chkBorder.addEventListener('change', processAndQuantize);
+
+function refreshAllPreviews() {
+  renderOriginal();
+  if (sourceImage) {
+    drawCropCanvas();
+    processAndQuantize();
+  }
+}
+
+charIndex.addEventListener('input', refreshAllPreviews);
+btnPrev.addEventListener('click', () => {
+  if (charIndex.value > 0) {
+    charIndex.value = parseInt(charIndex.value) - 1;
+    refreshAllPreviews();
+  }
+});
+btnNext.addEventListener('click', () => {
+  if (parseInt(charIndex.value) < parseInt(charIndex.max)) {
+    charIndex.value = parseInt(charIndex.value) + 1;
+    refreshAllPreviews();
+  }
+});
+
+btnSaveIso.addEventListener('click', async () => {
+  if (!rawKaoBuffer || !FACTORY_PALETTE_BYTES) {
+    updateStatus("错误: 请先载入游戏原版 ISO 镜像！", true);
+    return;
+  }
+  if (!stagedRemappedIndices) {
+    updateStatus("错误: 请先导入人物图像并调整特写！", true);
+    return;
+  }
+
+  const targetIdx = parseInt(charIndex.value);
+  const targetBuffer = fullIsoBuffer;
+  const baseOffset = kaoOffsetInIso;
+
+  if (targetIdx >= 608 && targetIdx <= 637) {
+    const pageIndex = Math.floor((targetIdx - 608) / 10);
+    const pageStart = 608 + pageIndex * 10;
+    for (let id = pageStart; id < pageStart + 10; id++) {
+      const { base } = getOffsets(id);
+      const fullBase = baseOffset + base;
+      targetBuffer[fullBase + 0] = 0x00;
+      targetBuffer[fullBase + 1] = 0x01;
+      targetBuffer[fullBase + 2] = 0x01;
+      targetBuffer[fullBase + 3] = 0x00;
+      for (let i = 0; i < 512; i++) {
+        targetBuffer[fullBase + 4 + i] = FACTORY_PALETTE_BYTES[i];
+      }
+    }
+  }
+
+  const targetOffsets = getOffsets(targetIdx);
+  const pixelDest = baseOffset + targetOffsets.pixelStart;
+  for (let i = 0; i < WIDTH * HEIGHT; i++) {
+    targetBuffer[pixelDest + i] = stagedRemappedIndices[i];
+  }
+
+  const defaultOutName = originalFileName.replace(/\.iso$/i, '') + "_MODDED.iso";
+
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: defaultOutName,
+        types: [{
+          description: 'PSP ISO 镜像 (*.iso)',
+          accept: { 'application/octet-stream': ['.iso'] },
+        }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(fullIsoBuffer);
+      await writable.close();
+      renderOriginal();
+      updateStatus("ISO 镜像注入并保存成功。");
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+    }
+  }
+
+  const exportBlob = new Blob([fullIsoBuffer], { type: 'application/octet-stream' });
+  const dlLink = document.createElement('a');
+  dlLink.download = defaultOutName;
+  dlLink.href = URL.createObjectURL(exportBlob);
+  dlLink.click();
+  setTimeout(() => URL.revokeObjectURL(dlLink.href), 1000);
+
+  renderOriginal();
+  updateStatus("ISO 镜像注入成功，已触发下载。");
+});
+
+initCropArea();
+</script>
+</body>
+</html>
