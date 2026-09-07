@@ -1,3 +1,4 @@
 # psp-san7-portrait-tool
 PSP《三国志7》ISO 武将头像注入替换工具
-<img width="1202" height="812" alt="8ee4312656e7839e89ab2a7951b24bc6" src="https://github.com/user-attachments/assets/d775bb71-e7b6-4c75-a834-4d21c7ed5354" />
+<img width="1171" height="812" alt="image" src="https://github.com/user-attachments/assets/0fa07ebe-067b-48dc-86c0-530731181287" />
+
